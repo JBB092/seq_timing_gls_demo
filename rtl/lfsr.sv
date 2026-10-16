@@ -1,3 +1,5 @@
+// Pseudo-random data source for the delay chain
+// 16-bit LFSR that feeds the delay chain with new data every clock
 module lfsr #(
     parameter int              WIDTH = 16,
     parameter logic [WIDTH-1:0] TAPS = 16'hB400,  // bits 16, 14, 13, 11 (1-based)
