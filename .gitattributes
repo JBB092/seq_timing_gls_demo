@@ -1,0 +1,12 @@
+# Normalize text files; scripts get a fixed line ending so they run
+# on their target OS regardless of core.autocrlf
+* text=auto
+
+*.sh      text eol=lf
+Makefile  text eol=lf
+*.tcl     text eol=lf
+*.ps1     text eol=crlf
+
+*.png     binary
+*.jpg     binary
+*.svg     text

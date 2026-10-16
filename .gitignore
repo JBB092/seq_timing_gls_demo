@@ -1,0 +1,48 @@
+# All generated output (netlists, SDF, STA CSV, timing_cfg.svh, .sof,
+# work libraries, logs, versions.txt) goes here
+build/
+
+# Quartus outputs if a project is opened from the GUI
+quartus/db/
+quartus/incremental_db/
+quartus/output_files/
+quartus/simulation/
+quartus/greybox_tmp/
+quartus/*.qws
+quartus/*.rpt
+quartus/*.summary
+quartus/*.smsg
+quartus/*.pin
+quartus/*.jdi
+quartus/*.sof
+quartus/*.pof
+quartus/*.done
+quartus/*.qarlog
+quartus/c5_pin_model_dump.txt
+quartus/ip/**/simulation/
+quartus/ip/**/synthesis/
+quartus/ip/.qsys_edit/
+
+# Questa outputs if run outside the scripts
+work/
+transcript
+*.wlf
+*.vstf
+modelsim.ini
+wlft*
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs and backups
+*.log
+*.bak
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
