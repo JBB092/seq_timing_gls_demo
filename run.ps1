@@ -9,12 +9,14 @@
 .EXAMPLE
     .\run.ps1 rtl -Depth 24
 .EXAMPLE
+    .\run.ps1 report
+.EXAMPLE
     .\run.ps1 clean
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'rtl', 'clean')]
+    [ValidateSet('help', 'rtl', 'report', 'clean')]
     [string]$Target = 'help',
 
     # Chain depth; 0 means the default in rtl/chain_cfg.svh
@@ -34,6 +36,7 @@ function Show-Help {
     Write-Host 'Targets:'
     Write-Host '  help    Show this message (default)'
     Write-Host '  rtl     Zero-delay RTL simulation of core'
+    Write-Host '  report  Summarize all simulation logs (k x T table)'
     Write-Host '  clean   Remove build/ and any Quartus output folders'
     Write-Host ''
     Write-Host 'Options:'
@@ -43,6 +46,11 @@ function Show-Help {
 function Invoke-Sim([string]$Mode) {
     $depthArg = if ($Depth -gt 0) { "$Depth" } else { '' }
     vsim -c -nolog -do "set MODE $Mode; set DEPTH {$depthArg}; source scripts/sim.tcl"
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+function Invoke-Report {
+    python scripts/parse_logs.py
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -60,9 +68,10 @@ function Invoke-Clean {
 Push-Location $PSScriptRoot
 try {
     switch ($Target) {
-        'help'  { Show-Help }
-        'rtl'   { Invoke-Sim 'rtl' }
-        'clean' { Invoke-Clean }
+        'help'   { Show-Help }
+        'rtl'    { Invoke-Sim 'rtl' }
+        'report' { Invoke-Report }
+        'clean'  { Invoke-Clean }
     }
 } finally {
     Pop-Location
