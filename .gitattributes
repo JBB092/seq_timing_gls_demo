@@ -1,6 +1,6 @@
 # Normalize text files; scripts get a fixed line ending so they run
 # on their target OS regardless of core.autocrlf
-* text=auto
+* text=auto eol=lf
 
 *.sh      text eol=lf
 Makefile  text eol=lf
