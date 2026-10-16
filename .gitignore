@@ -31,6 +31,9 @@ transcript
 modelsim.ini
 wlft*
 
+# Local helper, shared with the professor separately
+scripts/capture_versions.py
+
 # Python
 __pycache__/
 *.pyc
