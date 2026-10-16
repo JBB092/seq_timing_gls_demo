@@ -11,12 +11,22 @@ module lfsr #(
 );
 
     // The all-zeros state is a lock-up state (0 XOR 0 = 0), hence a non-zero seed
-    logic feedback;
+    logic             feedback;
+    logic [WIDTH-1:0] q_next;
     assign feedback = ^(q & TAPS);
+    assign q_next   = rst ? SEED : {q[WIDTH-2:0], feedback};
 
-    always_ff @(posedge clk) begin
-        if (rst) q <= SEED;
-        else     q <= {q[WIDTH-2:0], feedback};
-    end
+    // Every bit launches into a chain stage, so each one is a dff_stage
+    // (the cell version adds tCO and setup/hold checks in approach A)
+    genvar i;
+    generate
+        for (i = 0; i < WIDTH; i++) begin : g_ff
+            dff_stage u_ff (
+                .clk (clk),
+                .d   (q_next[i]),
+                .q   (q[i])
+            );
+        end
+    endgenerate
 
 endmodule
