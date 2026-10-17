@@ -11,6 +11,8 @@
 .EXAMPLE
     .\run.ps1 build -Depth 24
 .EXAMPLE
+    .\run.ps1 build_sweep -Depths 8,16,24
+.EXAMPLE
     .\run.ps1 program -Depth 24
 .EXAMPLE
     .\run.ps1 report
@@ -20,12 +22,15 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'rtl', 'build', 'program', 'report', 'clean')]
+    [ValidateSet('help', 'rtl', 'build', 'build_sweep', 'program', 'report', 'clean')]
     [string]$Target = 'help',
 
     # Chain depth; 0 means the default in rtl/chain_cfg.svh
     [ValidateRange(0, 1024)]
-    [int]$Depth = 0
+    [int]$Depth = 0,
+
+    # Depths for build_sweep; empty means the default list in scripts/build.tcl
+    [int[]]$Depths = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,18 +40,20 @@ $ErrorActionPreference = 'Stop'
 $CleanDirs = @('build', 'quartus\db', 'quartus\incremental_db', 'quartus\output_files')
 
 function Show-Help {
-    Write-Host 'Usage: .\run.ps1 <target> [-Depth <k>]'
+    Write-Host 'Usage: .\run.ps1 <target> [-Depth <k>] [-Depths <k1,k2,...>]'
     Write-Host ''
     Write-Host 'Targets:'
     Write-Host '  help    Show this message (default)'
     Write-Host '  rtl     Zero-delay RTL simulation of core'
     Write-Host '  build   Quartus compile of the board project'
+    Write-Host '  build_sweep  Compile several depths and summarize their slack'
     Write-Host '  program Load the .sof of that depth into the FPGA (JTAG device 2)'
     Write-Host '  report  Summarize all simulation logs (k x T table)'
     Write-Host '  clean   Remove build/ and any Quartus output folders'
     Write-Host ''
     Write-Host 'Options:'
     Write-Host '  -Depth  Chain depth k (default: CHAIN_DEPTH in rtl/chain_cfg.svh)'
+    Write-Host '  -Depths Depth list for build_sweep (default: list in scripts/build.tcl)'
 }
 
 function Invoke-Sim([string]$Mode) {
@@ -58,6 +65,13 @@ function Invoke-Sim([string]$Mode) {
 function Invoke-Quartus([string]$Action) {
     $quartusArgs = @('-t', 'scripts/build.tcl', $Action, 'board')
     if ($Depth -gt 0) { $quartusArgs += "$Depth" }
+    quartus_sh @quartusArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+function Invoke-Sweep {
+    $quartusArgs = @('-t', 'scripts/build.tcl', 'sweep', 'board')
+    if ($Depths.Count -gt 0) { $quartusArgs += ($Depths -join ' ') }
     quartus_sh @quartusArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
@@ -81,12 +95,13 @@ function Invoke-Clean {
 Push-Location $PSScriptRoot
 try {
     switch ($Target) {
-        'help'    { Show-Help }
-        'rtl'     { Invoke-Sim 'rtl' }
-        'build'   { Invoke-Quartus 'compile' }
-        'program' { Invoke-Quartus 'program' }
-        'report'  { Invoke-Report }
-        'clean'   { Invoke-Clean }
+        'help'        { Show-Help }
+        'rtl'         { Invoke-Sim 'rtl' }
+        'build'       { Invoke-Quartus 'compile' }
+        'build_sweep' { Invoke-Sweep }
+        'program'     { Invoke-Quartus 'program' }
+        'report'      { Invoke-Report }
+        'clean'       { Invoke-Clean }
     }
 } finally {
     Pop-Location
