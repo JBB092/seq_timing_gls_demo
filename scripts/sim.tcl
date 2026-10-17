@@ -1,14 +1,17 @@
 # Simulation flow shared by run.ps1 and the Makefile, run from the repo root:
 #   vsim -c -nolog -do "set MODE rtl; set DEPTH 16; source scripts/sim.tcl"
 #   vsim -c -nolog -do "set MODE gls_udp; set CORNER min; set DEPTH {8 16 24}; source scripts/sim.tcl"
-# MODE: rtl or gls_udp.
+# MODE: rtl, gls_udp or gls_func.
+# gls_func simulates the Quartus netlist of the core_sim revision for each
+# depth; a missing or outdated netlist is rebuilt first with build.tcl.
 # DEPTH: one depth or a list (recompiled for each); empty means the default
 # in chain_cfg.svh.
 # CORNER (gls_udp only): min, typ or max (default max), picks the value of
 # the min:typ:max delays in build/timing_cfg.svh.
 # TCHK_MSG (gls_udp only): 1 prints every timing check violation; by default
 # they are only counted by the testbench (x_count column).
-# rtl must pass at every period; gls_udp at the board period (10 ns) and above.
+# rtl and gls_func must pass at every period; gls_udp at the board period
+# (10 ns) and above.
 # Exit code: 0 = pass, 1 = testbench failed, 2 = compile or script error.
 # With several depths the worst code wins.
 
@@ -20,8 +23,46 @@ proc default_depth {} {
     return $depth
 }
 
+proc netlist_path {depth} {
+    return build/quartus/core_sim_d$depth/simulation/questa/core_sim.svo
+}
+
+# Rebuild the core_sim netlist of one depth if it is missing or older than
+# the sources it comes from. Returns 0 if the netlist is ready.
+proc update_netlist {depth} {
+    set netlist [netlist_path $depth]
+    set reason "missing"
+    if {[file exists $netlist]} {
+        set reason ""
+        set sources [concat [glob rtl/*.sv rtl/*.svh] quartus/core_sim.qsf quartus/core_sim.sdc]
+        foreach src $sources {
+            if {[file mtime $src] > [file mtime $netlist]} { set reason "older than $src" }
+        }
+    }
+    if {$reason eq ""} { return 0 }
+    echo "=== netlist for depth $depth is $reason: compiling core_sim (about 2 minutes)"
+    if {[catch {exec quartus_sh -t scripts/build.tcl compile core_sim $depth >@ stdout 2>@ stderr}]} {
+        return 2
+    }
+    return 0
+}
+
+# vlog arguments for the design of one mode and depth
+proc design_sources {mode depth} {
+    switch $mode {
+        rtl      { return [list -f filelists/rtl.f] }
+        gls_udp  { return [list -f filelists/gls_udp.f] }
+        gls_func { return [list +incdir+rtl [netlist_path $depth]] }
+    }
+}
+
 # Compile and simulate one depth. Returns the exit code.
-proc run_one {run filelist vsim_opts depth} {
+proc run_one {run mode vsim_opts depth} {
+    if {$mode eq "gls_func" && [update_netlist $depth] != 0} {
+        echo "=== RESULT: BUILD FAILED (mode=$run depth=$depth)"
+        return 2
+    }
+
     # Each mode and depth gets its own work library, so nothing is shared
     set out build/$run/d$depth
     file delete -force $out
@@ -30,7 +71,8 @@ proc run_one {run filelist vsim_opts depth} {
 
     echo "=== mode=$run depth=$depth out=$out"
     vlib $out/work
-    if {[catch {vlog -work $out/work -sv +define+CHAIN_DEPTH=$depth -f $filelist tb/tb_core.sv}]} {
+    set sources [design_sources $mode $depth]
+    if {[catch {eval vlog -work $out/work -sv +define+CHAIN_DEPTH=$depth $sources tb/tb_core.sv}]} {
         echo "=== RESULT: COMPILE ERROR (mode=$run depth=$depth)"
         return 2
     }
@@ -72,8 +114,12 @@ if {![info exists CORNER] || $CORNER eq ""} { set CORNER max }
 switch $MODE {
     rtl {
         set run       rtl
-        set filelist  filelists/rtl.f
         set vsim_opts +T_CHECK=0
+    }
+    gls_func {
+        # Precompiled Cyclone V atoms and Altera primitives (dffeas)
+        set run       gls_func
+        set vsim_opts {+T_CHECK=0 -L cyclonev_ver -L altera_ver}
     }
     gls_udp {
         if {[lsearch -exact {min typ max} $CORNER] < 0} {
@@ -86,7 +132,6 @@ switch $MODE {
         }
         # One folder per corner, so the results of each corner are kept
         set run       gls_udp_$CORNER
-        set filelist  filelists/gls_udp.f
         set vsim_opts +${CORNER}delays
         if {![info exists TCHK_MSG] || $TCHK_MSG ne "1"} { lappend vsim_opts +no_tchk_msg }
     }
@@ -96,7 +141,7 @@ switch $MODE {
 set worst 0
 set results {}
 foreach k $DEPTH {
-    set code [run_one $run $filelist $vsim_opts $k]
+    set code [run_one $run $MODE $vsim_opts $k]
     lappend results [list $k $code]
     if {$code > $worst} { set worst $code }
 }

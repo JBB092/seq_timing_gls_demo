@@ -3,6 +3,7 @@
 # same targets on Windows. New targets are added as the demo grows.
 #   make rtl            default depth (rtl/chain_cfg.svh)
 #   make rtl DEPTH=24   chain depth 24
+#   make gls_func DEPTH=24  zero-delay simulation of the Quartus netlist
 #   make gls_udp DEPTHS="8 16 24" CORNER=typ  approach A, one run per depth
 #   make build DEPTH=24 Quartus compile of the board project
 #   make build DEPTH=24 REVISION=core_sim  netlist of core for simulation
@@ -24,7 +25,7 @@ CLEAN_DIRS := build quartus/db quartus/incremental_db quartus/output_files
 # Simulations take DEPTHS if given, otherwise DEPTH
 SIM_DEPTHS = $(if $(DEPTHS),$(DEPTHS),$(DEPTH))
 
-.PHONY: help rtl gls_udp build build_sweep sta_export program report clean
+.PHONY: help rtl gls_func gls_udp build build_sweep sta_export program report clean
 
 help:
 	@echo "Usage: make <target> [DEPTH=<k>] [DEPTHS=\"k1 k2 ...\"] [CORNER=min|typ|max] [REVISION=board|core_sim]"
@@ -32,6 +33,7 @@ help:
 	@echo "Targets:"
 	@echo "  help    Show this message (default)"
 	@echo "  rtl     Zero-delay RTL simulation of core"
+	@echo "  gls_func  Zero-delay simulation of the Quartus netlist (core_sim revision)"
 	@echo "  gls_udp Approach A: UDP cells with delays from the STA"
 	@echo "  build   Quartus compile of one depth"
 	@echo "  build_sweep  Compile several depths and summarize their slack"
@@ -42,7 +44,7 @@ help:
 	@echo ""
 	@echo "Options:"
 	@echo "  DEPTH   Chain depth k (default: CHAIN_DEPTH in rtl/chain_cfg.svh)"
-	@echo "  DEPTHS  Depth list: rtl and gls_udp simulate each one, build_sweep"
+	@echo "  DEPTHS  Depth list: the simulations run each one, build_sweep"
 	@echo "          compiles each one (default: list in scripts/build.tcl),"
 	@echo "          sta_export exports each one (default: every build found)"
 	@echo "  CORNER  Delay corner for gls_udp: min, typ or max (default max)"
@@ -51,6 +53,10 @@ help:
 
 rtl:
 	vsim -c -nolog -do "set MODE rtl; set DEPTH {$(SIM_DEPTHS)}; source scripts/sim.tcl"
+
+# The netlist of each depth is built (or rebuilt if outdated) by sim.tcl
+gls_func:
+	vsim -c -nolog -do "set MODE gls_func; set DEPTH {$(SIM_DEPTHS)}; source scripts/sim.tcl"
 
 gls_udp: build/timing_cfg.svh
 	vsim -c -nolog -do "set MODE gls_udp; set CORNER $(CORNER); set DEPTH {$(SIM_DEPTHS)}; source scripts/sim.tcl"

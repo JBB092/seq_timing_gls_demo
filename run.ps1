@@ -11,6 +11,8 @@
 .EXAMPLE
     .\run.ps1 gls_udp -Depths 8,16,24,32 -Corner typ
 .EXAMPLE
+    .\run.ps1 gls_func -Depth 24
+.EXAMPLE
     .\run.ps1 build -Depth 24
 .EXAMPLE
     .\run.ps1 build_sweep -Depths 8,16,24
@@ -24,7 +26,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'rtl', 'gls_udp', 'build', 'build_sweep', 'sta_export', 'program', 'report', 'clean')]
+    [ValidateSet('help', 'rtl', 'gls_func', 'gls_udp', 'build', 'build_sweep', 'sta_export', 'program', 'report', 'clean')]
     [string]$Target = 'help',
 
     # Chain depth; 0 means the default in rtl/chain_cfg.svh
@@ -55,6 +57,7 @@ function Show-Help {
     Write-Host 'Targets:'
     Write-Host '  help    Show this message (default)'
     Write-Host '  rtl     Zero-delay RTL simulation of core'
+    Write-Host '  gls_func  Zero-delay simulation of the Quartus netlist (core_sim revision)'
     Write-Host '  gls_udp Approach A: UDP cells with delays from the STA'
     Write-Host '  build   Quartus compile of one depth'
     Write-Host '  build_sweep  Compile several depths and summarize their slack'
@@ -65,7 +68,7 @@ function Show-Help {
     Write-Host ''
     Write-Host 'Options:'
     Write-Host '  -Depth  Chain depth k (default: CHAIN_DEPTH in rtl/chain_cfg.svh)'
-    Write-Host '  -Depths Depth list: rtl and gls_udp simulate each one, build_sweep'
+    Write-Host '  -Depths Depth list: the simulations run each one, build_sweep'
     Write-Host '          compiles each one (default: list in scripts/build.tcl),'
     Write-Host '          sta_export exports each one (default: every build found)'
     Write-Host '  -Corner Delay corner for gls_udp: min, typ or max (default max)'
@@ -136,6 +139,7 @@ try {
     switch ($Target) {
         'help'        { Show-Help }
         'rtl'         { Invoke-Sim 'rtl' }
+        'gls_func'    { Invoke-Sim 'gls_func' }
         'gls_udp'     { Update-TimingCfg; Invoke-Sim 'gls_udp' }
         'build'       { Invoke-Quartus 'compile' $Revision }
         'build_sweep' { Invoke-Sweep }
