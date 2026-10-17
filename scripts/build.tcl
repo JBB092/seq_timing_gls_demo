@@ -12,7 +12,7 @@
 
 load_package flow
 
-set DEFAULT_SWEEP {8 16 24 32 48 64}
+set DEFAULT_SWEEP {8 16 24 32 36 40 44 48 64}
 
 proc default_depth {} {
     set f [open rtl/chain_cfg.svh r]
