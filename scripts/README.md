@@ -9,6 +9,7 @@
 | `sim.tcl` | Compiles and simulates one mode at one depth | `filelists/<mode>.f`, `tb/tb_core.sv` | `build/<mode>/d<k>/work`, `build/<mode>/d<k>/sim.log` | `rtl` target |
 | `parse_logs.py` | Lists the errors and warnings of every log and merges the T sweeps into a k x T table | `build/*/d*/sim.log` | `build/reports/kxt_<mode>.csv` | `report` target |
 | `build.tcl` | Compiles the Quartus project for one or several depths, or programs the board | `quartus/board.qsf` and the sources it lists | `build/quartus/board_d<k>/`, `build/quartus/board_sweep.csv` | `build`, `build_sweep`, `program` targets |
+| `sta_export.tcl` | Exports the critical path of each build (every point, every corner) | `build/quartus/board_d<k>/` | `build/sta/board_summary.csv`, `build/sta/board_path_d<k>.csv` | `sta_export` target |
 
 ## sim.tcl
 
@@ -61,6 +62,30 @@ quartus_sh -t scripts/build.tcl program board 40
 
 Details are in `quartus/README.md`.
 
+## sta_export.tcl
+
+Runs inside the Quartus timing analyzer, from the repo root, after the builds:
+
+```
+quartus_sta -t scripts/sta_export.tcl board            # every build found
+quartus_sta -t scripts/sta_export.tcl board "16 24"    # some depths
+```
+
+For each depth and each of the four corners it takes the path from LFSR
+bit 0 to the chain capture flip-flop (the one that crosses every stage) and
+writes:
+
+- `build/sta/board_path_d<k>.csv`: every point of the path (clock network,
+  wire `ic` and LUT `cell` delays of each stage, register input), per corner
+- `build/sta/board_summary.csv`: one row per depth and corner with the slack,
+  total data delay, clock skew, uncertainty, the sum of LUT and wire delays
+  of the chain, the average delay per stage, the worst slack of any path to
+  the capture register and the hold slack
+
+The Cyclone V timing model reports the register times (`utco`, `utsu`,
+`uth`) as 0: those delays are part of the clock network delay and of the
+last cell before the capture register (`reg_in` column).
+
 ## Flow
 
 For now, for each depth k:
@@ -68,4 +93,5 @@ For now, for each depth k:
 ```
 sim.tcl (rtl, k)  ->  build/rtl/d<k>/sim.log  ->  parse_logs.py  ->  k x T table
 build.tcl compile (k)  ->  slack  ->  build.tcl program (k)  ->  board
+build.tcl compile (k)  ->  sta_export.tcl  ->  build/sta/*.csv
 ```

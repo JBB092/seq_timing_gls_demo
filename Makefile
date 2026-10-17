@@ -5,6 +5,7 @@
 #   make rtl DEPTH=24   chain depth 24
 #   make build DEPTH=24 Quartus compile of the board project
 #   make build_sweep DEPTHS="8 16 24"  compile several depths
+#   make sta_export     critical path of every build to build/sta/ (CSV)
 #   make program DEPTH=24  load that .sof into the FPGA
 #   make report         k x T table from all logs
 
@@ -16,7 +17,7 @@ PYTHON ?= python3
 # if the project is opened from the Quartus GUI
 CLEAN_DIRS := build quartus/db quartus/incremental_db quartus/output_files
 
-.PHONY: help rtl build build_sweep program report clean
+.PHONY: help rtl build build_sweep sta_export program report clean
 
 help:
 	@echo "Usage: make <target> [DEPTH=<k>] [DEPTHS=\"k1 k2 ...\"]"
@@ -26,6 +27,7 @@ help:
 	@echo "  rtl     Zero-delay RTL simulation of core"
 	@echo "  build   Quartus compile of the board project"
 	@echo "  build_sweep  Compile several depths and summarize their slack"
+	@echo "  sta_export   Export the critical path of the builds to build/sta/ (CSV)"
 	@echo "  program Load the .sof of that depth into the FPGA (JTAG device 2)"
 	@echo "  report  Summarize all simulation logs (k x T table)"
 	@echo "  clean   Remove build/ and any Quartus output folders"
@@ -33,6 +35,7 @@ help:
 	@echo "Options:"
 	@echo "  DEPTH   Chain depth k (default: CHAIN_DEPTH in rtl/chain_cfg.svh)"
 	@echo "  DEPTHS  Depth list for build_sweep (default: list in scripts/build.tcl)"
+	@echo "          and for sta_export (default: every build found)"
 
 rtl:
 	vsim -c -nolog -do "set MODE rtl; set DEPTH {$(DEPTH)}; source scripts/sim.tcl"
@@ -42,6 +45,9 @@ build:
 
 build_sweep:
 	quartus_sh -t scripts/build.tcl sweep board "$(DEPTHS)"
+
+sta_export:
+	quartus_sta -t scripts/sta_export.tcl board "$(DEPTHS)"
 
 program:
 	quartus_sh -t scripts/build.tcl program board $(DEPTH)

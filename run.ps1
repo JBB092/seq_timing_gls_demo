@@ -22,7 +22,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'rtl', 'build', 'build_sweep', 'program', 'report', 'clean')]
+    [ValidateSet('help', 'rtl', 'build', 'build_sweep', 'sta_export', 'program', 'report', 'clean')]
     [string]$Target = 'help',
 
     # Chain depth; 0 means the default in rtl/chain_cfg.svh
@@ -47,6 +47,7 @@ function Show-Help {
     Write-Host '  rtl     Zero-delay RTL simulation of core'
     Write-Host '  build   Quartus compile of the board project'
     Write-Host '  build_sweep  Compile several depths and summarize their slack'
+    Write-Host '  sta_export   Export the critical path of the builds to build/sta/ (CSV)'
     Write-Host '  program Load the .sof of that depth into the FPGA (JTAG device 2)'
     Write-Host '  report  Summarize all simulation logs (k x T table)'
     Write-Host '  clean   Remove build/ and any Quartus output folders'
@@ -54,6 +55,7 @@ function Show-Help {
     Write-Host 'Options:'
     Write-Host '  -Depth  Chain depth k (default: CHAIN_DEPTH in rtl/chain_cfg.svh)'
     Write-Host '  -Depths Depth list for build_sweep (default: list in scripts/build.tcl)'
+    Write-Host '          and for sta_export (default: every build found)'
 }
 
 function Invoke-Sim([string]$Mode) {
@@ -73,6 +75,13 @@ function Invoke-Sweep {
     $quartusArgs = @('-t', 'scripts/build.tcl', 'sweep', 'board')
     if ($Depths.Count -gt 0) { $quartusArgs += ($Depths -join ' ') }
     quartus_sh @quartusArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+function Invoke-StaExport {
+    $staArgs = @('-t', 'scripts/sta_export.tcl', 'board')
+    if ($Depths.Count -gt 0) { $staArgs += ($Depths -join ' ') }
+    quartus_sta @staArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -99,6 +108,7 @@ try {
         'rtl'         { Invoke-Sim 'rtl' }
         'build'       { Invoke-Quartus 'compile' }
         'build_sweep' { Invoke-Sweep }
+        'sta_export'  { Invoke-StaExport }
         'program'     { Invoke-Quartus 'program' }
         'report'      { Invoke-Report }
         'clean'       { Invoke-Clean }
