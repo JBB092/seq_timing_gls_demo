@@ -11,6 +11,7 @@
 | `build.tcl` | Compiles the Quartus project for one or several depths, or programs the board | `quartus/board.qsf` and the sources it lists | `build/quartus/board_d<k>/`, `build/quartus/board_sweep.csv` | `build`, `build_sweep`, `program` targets |
 | `sta_export.tcl` | Exports the critical path of each build (every point, every corner) | `build/quartus/board_d<k>/` | `build/sta/board_summary.csv`, `build/sta/board_path_d<k>.csv` | `sta_export` target |
 | `gen_timing_cfg.py` | Turns the STA export into average cell delays for approach A | `build/sta/board_summary.csv` | `build/timing_cfg.svh` | `gls_udp` target, when the CSV is newer than the `.svh` |
+| `gen_sdf.py` | Turns the STA export of each `core_sim` build into an SDF file for approach B | `build/sta/core_sim_*.csv`, the `core_sim` netlist | `build/sdf/core_sim_d<k>.sdf` | by hand for now |
 
 ## sim.tcl
 
@@ -146,6 +147,47 @@ violations inside the LFSR, where the feedback has no delay.
 
 The same file works for any depth. The script also prints the largest depth
 that should pass at the given period for each corner.
+
+## gen_sdf.py
+
+```
+python scripts/gen_sdf.py                 # every core_sim depth exported
+python scripts/gen_sdf.py --depths 16 40
+```
+
+Approach B annotates the Quartus netlist of `core_sim` with an SDF file (one
+per depth), so it needs the `core_sim` builds and their STA export first:
+
+```powershell
+.\run.ps1 build_sweep -Revision core_sim -Depths 16,40
+.\run.ps1 sta_export -Revision core_sim
+python scripts/gen_sdf.py
+```
+
+What goes into `build/sdf/core_sim_d<k>.sdf`:
+
+| Cells | SDF entry | Value |
+|---|---|---|
+| The k chain LUTs (`cyclonev_lcell_comb`) | `IOPATH <pin> combout` for the input on the path | Wire delay to that pin + LUT delay |
+| Every register (`dffeas`) | `IOPATH (posedge clk) q` | `reg_in` of this build |
+| Every register (`dffeas`) | `SETUPHOLD` on `d` and `asdata` | Setup = uncertainty minus clock skew of this build, hold = 0 |
+
+It is the same split as approach A (see `gen_timing_cfg.py`), but each depth
+uses the delays of its own build, stage by stage, instead of averages. The
+LFSR registers shift through `asdata`, so the check is set on both inputs.
+Each value is a `min:typ:max` triplet in ns, with the same corners as
+`gen_timing_cfg.py`. Cells off the path (the other LUT inputs, the reference
+path, the counter) keep the zero delays of the netlist.
+
+The script checks that every chain LUT is in the netlist of that depth, and
+stops if the STA export is older than the netlist (it would come from another
+build). For each depth it prints the shortest period the annotated path
+allows; it matches `10 ns - slack` from the STA.
+
+Instance names are written with a backslash before every character that is
+not a letter, digit or underscore, as SDF requires:
+`u_chain|g_stage[3].u_stage|y_keep` becomes
+`u_chain\|g_stage\[3\]\.u_stage\|y_keep`.
 
 ## Flow
 
