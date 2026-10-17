@@ -3,12 +3,17 @@
 > AI usage disclaimer: this README was created or assisted using AI tooling and then reviewed against the actual project files.
 
 Synthesizable sources of the demo. `core` is the circuit that gets simulated;
-the board top level (added later) wraps it with a PLL, a button synchronizer
-and the 7-segment displays.
+`board_top` wraps it with a PLL, a button synchronizer and the 7-segment
+displays for the DE10-Standard.
 
 ## Module hierarchy
 
 ```
+board_top           (board only)
+├── pll_main        quartus/ip/pll_main.v, 50 -> 100 MHz
+├── hex7seg         x 6
+└── core
+
 core
 ├── lfsr            16 x dff_stage
 ├── delay_chain     CHAIN_DEPTH x chain_stage
@@ -30,6 +35,8 @@ core
 | `ref_path.sv` | `ref_path` | Same function as the chain, written so Quartus can compress it |
 | `error_checker.sv` | `error_checker` | Compares both captured bits; 24-bit saturating error counter and sticky error flag |
 | `core.sv` | `core` | Connects everything; this is the module the testbench simulates |
+| `hex7seg.sv` | `hex7seg` | 4-bit value to an active-low 7-segment pattern |
+| `board_top.sv` | `board_top` | Board top level: PLL, synchronizers, displays and LEDs around `core` |
 
 ## How it works
 
@@ -56,9 +63,22 @@ always meets timing.
 ### Two versions of `chain_stage` and `dff_stage`
 
 The files in this folder are the versions used by Quartus and by the `rtl`
-simulation. The `cells/` folder (added later) will have versions of the same
-modules with propagation delays, used by the `gls_udp` simulation. The
-filelist of each flow picks one or the other; there are no `ifdef`s.
+simulation. The `cells/` folder has versions of the same modules with
+propagation delays, used by the `gls_udp` simulation (approach A). The
+filelist of each flow picks one or the other; there are no `ifdef`s. See
+`cells/README.md`.
+
+## `core` and `board_top`
+
+| | `core` | `board_top` |
+|---|---|---|
+| Used by | The testbench (all simulation modes) and the `core_sim` Quartus revision | The `board` Quartus revision |
+| Clock | `clk` port, set by the testbench | `CLOCK_50` through the PLL, 100 MHz |
+| Reset | `rst` port | PLL `locked`, synchronized with 2 flip-flops |
+| Clear | `clr` port | `KEY0`, synchronized with 2 flip-flops |
+| Outputs | `chain_q`, `ref_q`, `err_count`, `err_flag` | `HEX5-HEX4` = k, `HEX3-HEX0` = errors, `LEDR0` = error flag, `LEDR9` = PLL locked |
+
+The board map is described in `quartus/README.md`.
 
 ## Changing the depth
 
