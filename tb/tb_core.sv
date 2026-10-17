@@ -3,6 +3,8 @@
 // Self-checking testbench for core: sweeps the clock period T for the
 // compiled CHAIN_DEPTH and prints a T -> PASS/FAIL table
 // Plusargs (all in ps): +T_MAX=40000 +T_MIN=2000 +T_STEP=2000 +CYCLES=1000
+// +T_CHECK=10000: the verdict only looks at T >= T_CHECK (10 ns is the board
+// period); 0 means every period
 module tb_core;
 
     timeunit 1ps;
@@ -81,6 +83,7 @@ module tb_core;
     int t_min  = 2000;
     int t_step = 2000;
     int cycles = 1000;
+    int t_check = 10000;
 
     int unsigned res_t     [MAX_POINTS];
     int unsigned res_chain [MAX_POINTS];
@@ -88,6 +91,7 @@ module tb_core;
     int unsigned res_x     [MAX_POINTS];
     int          n_points  = 0;
     int          n_fail    = 0;
+    int          n_fail_check = 0;  // failures at T >= t_check
 
     task automatic run_point(int t);
         // Change the period and reset while the clock is low
@@ -106,31 +110,62 @@ module tb_core;
         res_chain[n_points] = chain_err;
         res_ref[n_points]   = ref_err;
         res_x[n_points]     = x_count;
-        if (chain_err != 0 || ref_err != 0) n_fail++;
+        if (chain_err != 0 || ref_err != 0) begin
+            n_fail++;
+            if (t >= t_check) n_fail_check++;
+        end
         n_points++;
     endtask
+
+    // Questa picks the min:typ:max value of the cell delays with these
+    // options; with none given it uses typ, and the RTL has no delays at all
+    function automatic string corner_name();
+        if ($test$plusargs("mindelays")) return "min (+mindelays)";
+        if ($test$plusargs("maxdelays")) return "max (+maxdelays)";
+        return "none given (typ for cells with delays)";
+    endfunction
+
+    function automatic string min_pass_text();
+        int best = -1;
+        for (int i = 0; i < n_points; i++) begin  // points go from long to short T
+            if (res_chain[i] != 0 || res_ref[i] != 0) break;
+            best = res_t[i];
+        end
+        return best < 0 ? "none" : $sformatf("%0d ps", best);
+    endfunction
 
     initial begin
         void'($value$plusargs("T_MAX=%d",  t_max));
         void'($value$plusargs("T_MIN=%d",  t_min));
         void'($value$plusargs("T_STEP=%d", t_step));
         void'($value$plusargs("CYCLES=%d", cycles));
+        void'($value$plusargs("T_CHECK=%d", t_check));
         m_lfsr = SEED;
 
         if (t_step <= 0) $fatal(1, "T_STEP must be positive");
+        if (t_check > t_max) $fatal(1, "T_CHECK must not be above T_MAX");
         for (int t = t_max; t >= t_min && n_points < MAX_POINTS; t -= t_step)
             run_point(t);
 
         $display("");
         $display("==== T sweep: CHAIN_DEPTH=%0d, %0d cycles per T ====", DEPTH, cycles);
+        $display("Delay corner: %s", corner_name());
+        $display("chain_err/ref_err: wrong or X output; x_count: X outputs (timing check violations)");
         $display("%8s %10s %10s %8s  %s", "T(ps)", "chain_err", "ref_err", "x_count", "result");
         for (int i = 0; i < n_points; i++)
             $display("%8d %10d %10d %8d  %s", res_t[i], res_chain[i], res_ref[i], res_x[i],
                      (res_chain[i] == 0 && res_ref[i] == 0) ? "PASS" : "FAIL");
         $display("==== %0d of %0d periods failed ====", n_fail, n_points);
+        $display("Shortest period that passes along with every longer one: %s", min_pass_text());
+        if (t_check > 0)
+            $display("Verdict at T >= %0d ps: %s", t_check, n_fail_check ? "FAIL" : "PASS");
+        else
+            $display("Verdict at every period: %s", n_fail ? "FAIL" : "PASS");
         $display("");
 
-        if (n_fail != 0)
+        if (t_check > 0 && n_fail_check != 0)
+            $fatal(1, "CHAIN_DEPTH=%0d failed at T >= %0d ps", DEPTH, t_check);
+        if (t_check == 0 && n_fail != 0)
             $fatal(1, "CHAIN_DEPTH=%0d failed at %0d of %0d periods", DEPTH, n_fail, n_points);
         $finish;
     end

@@ -6,6 +6,9 @@
 # in chain_cfg.svh.
 # CORNER (gls_udp only): min, typ or max (default max), picks the value of
 # the min:typ:max delays in build/timing_cfg.svh.
+# TCHK_MSG (gls_udp only): 1 prints every timing check violation; by default
+# they are only counted by the testbench (x_count column).
+# rtl must pass at every period; gls_udp at the board period (10 ns) and above.
 # Exit code: 0 = pass, 1 = testbench failed, 2 = compile or script error.
 # With several depths the worst code wins.
 
@@ -51,23 +54,15 @@ proc run_one {run filelist vsim_opts depth} {
     return $code
 }
 
-# From the T sweep table of a log: result at 10 ns (the board period) and
-# the shortest T that passes along with every longer one
-proc log_summary {log} {
-    set at_10ns -
+# Shortest passing period printed by the testbench in a log
+proc min_passing_t {log} {
     set min_t -
-    set failed 0
-    if {![file exists $log]} { return [list $at_10ns $min_t] }
+    if {![file exists $log]} { return $min_t }
     set f [open $log r]
-    # Rows go from long to short T
-    foreach line [split [read $f] "\n"] {
-        if {![regexp {^#\s+(\d+)\s+\d+\s+\d+\s+\d+\s+(PASS|FAIL)\s*$} $line -> t res]} continue
-        if {$t == 10000} { set at_10ns $res }
-        if {$res eq "FAIL"} { set failed 1 }
-        if {$res eq "PASS" && !$failed} { set min_t [format "%.1f ns" [expr {$t / 1000.0}]] }
-    }
+    regexp {every longer one: (\d+) ps} [read $f] -> min_t
     close $f
-    return [list $at_10ns $min_t]
+    if {$min_t ne "-"} { set min_t [format "%.1f ns" [expr {$min_t / 1000.0}]] }
+    return $min_t
 }
 
 if {![info exists MODE]} { set MODE rtl }
@@ -78,7 +73,7 @@ switch $MODE {
     rtl {
         set run       rtl
         set filelist  filelists/rtl.f
-        set vsim_opts {}
+        set vsim_opts +T_CHECK=0
     }
     gls_udp {
         if {[lsearch -exact {min typ max} $CORNER] < 0} {
@@ -93,6 +88,7 @@ switch $MODE {
         set run       gls_udp_$CORNER
         set filelist  filelists/gls_udp.f
         set vsim_opts +${CORNER}delays
+        if {![info exists TCHK_MSG] || $TCHK_MSG ne "1"} { lappend vsim_opts +no_tchk_msg }
     }
     default { echo "Unknown mode: $MODE"; quit -code 2 }
 }
@@ -109,12 +105,11 @@ transcript file ""
 if {[llength $DEPTH] > 1} {
     echo ""
     echo "=== Depth sweep, mode=$run"
-    echo [format "    %4s  %-6s  %-10s  %s" k result "T = 10 ns" "min T that passes"]
+    echo [format "    %4s  %-6s  %s" k result "min T that passes"]
     foreach r $results {
         set k [lindex $r 0]
         set label [lindex {PASS FAIL ERROR} [lindex $r 1]]
-        lassign [log_summary build/$run/d$k/sim.log] at_10ns min_t
-        echo [format "    %4s  %-6s  %-10s  %s" $k $label $at_10ns $min_t]
+        echo [format "    %4s  %-6s  %s" $k $label [min_passing_t build/$run/d$k/sim.log]]
     }
 }
 quit -code $worst
