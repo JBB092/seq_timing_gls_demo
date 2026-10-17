@@ -9,6 +9,8 @@
 .EXAMPLE
     .\run.ps1 rtl -Depth 24
 .EXAMPLE
+    .\run.ps1 gls_udp -Depths 8,16,24,32 -Corner typ
+.EXAMPLE
     .\run.ps1 build -Depth 24
 .EXAMPLE
     .\run.ps1 build_sweep -Depths 8,16,24
@@ -22,15 +24,19 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'rtl', 'build', 'build_sweep', 'sta_export', 'program', 'report', 'clean')]
+    [ValidateSet('help', 'rtl', 'gls_udp', 'build', 'build_sweep', 'sta_export', 'program', 'report', 'clean')]
     [string]$Target = 'help',
 
     # Chain depth; 0 means the default in rtl/chain_cfg.svh
     [ValidateRange(0, 1024)]
     [int]$Depth = 0,
 
-    # Depths for build_sweep; empty means the default list in scripts/build.tcl
-    [int[]]$Depths = @()
+    # Depth list: simulations run once per depth, build_sweep compiles each one
+    [int[]]$Depths = @(),
+
+    # Delay corner for gls_udp
+    [ValidateSet('min', 'typ', 'max')]
+    [string]$Corner = 'max'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,11 +46,12 @@ $ErrorActionPreference = 'Stop'
 $CleanDirs = @('build', 'quartus\db', 'quartus\incremental_db', 'quartus\output_files')
 
 function Show-Help {
-    Write-Host 'Usage: .\run.ps1 <target> [-Depth <k>] [-Depths <k1,k2,...>]'
+    Write-Host 'Usage: .\run.ps1 <target> [-Depth <k>] [-Depths <k1,k2,...>] [-Corner min|typ|max]'
     Write-Host ''
     Write-Host 'Targets:'
     Write-Host '  help    Show this message (default)'
     Write-Host '  rtl     Zero-delay RTL simulation of core'
+    Write-Host '  gls_udp Approach A: UDP cells with delays from the STA'
     Write-Host '  build   Quartus compile of the board project'
     Write-Host '  build_sweep  Compile several depths and summarize their slack'
     Write-Host '  sta_export   Export the critical path of the builds to build/sta/ (CSV)'
@@ -54,13 +61,30 @@ function Show-Help {
     Write-Host ''
     Write-Host 'Options:'
     Write-Host '  -Depth  Chain depth k (default: CHAIN_DEPTH in rtl/chain_cfg.svh)'
-    Write-Host '  -Depths Depth list for build_sweep (default: list in scripts/build.tcl)'
-    Write-Host '          and for sta_export (default: every build found)'
+    Write-Host '  -Depths Depth list: rtl and gls_udp simulate each one, build_sweep'
+    Write-Host '          compiles each one (default: list in scripts/build.tcl),'
+    Write-Host '          sta_export exports each one (default: every build found)'
+    Write-Host '  -Corner Delay corner for gls_udp: min, typ or max (default max)'
 }
 
 function Invoke-Sim([string]$Mode) {
-    $depthArg = if ($Depth -gt 0) { "$Depth" } else { '' }
-    vsim -c -nolog -do "set MODE $Mode; set DEPTH {$depthArg}; source scripts/sim.tcl"
+    $depthArg = if ($Depths.Count -gt 0) { $Depths -join ' ' } elseif ($Depth -gt 0) { "$Depth" } else { '' }
+    vsim -c -nolog -do "set MODE $Mode; set CORNER $Corner; set DEPTH {$depthArg}; source scripts/sim.tcl"
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+# build/timing_cfg.svh comes from the STA export; regenerate it when the
+# export is newer
+function Update-TimingCfg {
+    $cfg = 'build\timing_cfg.svh'
+    $csv = 'build\sta\board_summary.csv'
+    if (-not (Test-Path $csv)) {
+        if (Test-Path $cfg) { return }
+        Write-Host "$csv not found. Run build_sweep and sta_export first."
+        exit 2
+    }
+    if ((Test-Path $cfg) -and ((Get-Item $cfg).LastWriteTime -ge (Get-Item $csv).LastWriteTime)) { return }
+    python scripts/gen_timing_cfg.py
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -106,6 +130,7 @@ try {
     switch ($Target) {
         'help'        { Show-Help }
         'rtl'         { Invoke-Sim 'rtl' }
+        'gls_udp'     { Update-TimingCfg; Invoke-Sim 'gls_udp' }
         'build'       { Invoke-Quartus 'compile' }
         'build_sweep' { Invoke-Sweep }
         'sta_export'  { Invoke-StaExport }
