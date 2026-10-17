@@ -36,7 +36,11 @@ param(
 
     # Delay corner for gls_udp
     [ValidateSet('min', 'typ', 'max')]
-    [string]$Corner = 'max'
+    [string]$Corner = 'max',
+
+    # Quartus revision for build, build_sweep and sta_export
+    [ValidateSet('board', 'core_sim')]
+    [string]$Revision = 'board'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,13 +50,13 @@ $ErrorActionPreference = 'Stop'
 $CleanDirs = @('build', 'quartus\db', 'quartus\incremental_db', 'quartus\output_files')
 
 function Show-Help {
-    Write-Host 'Usage: .\run.ps1 <target> [-Depth <k>] [-Depths <k1,k2,...>] [-Corner min|typ|max]'
+    Write-Host 'Usage: .\run.ps1 <target> [-Depth <k>] [-Depths <k1,k2,...>] [-Corner min|typ|max] [-Revision board|core_sim]'
     Write-Host ''
     Write-Host 'Targets:'
     Write-Host '  help    Show this message (default)'
     Write-Host '  rtl     Zero-delay RTL simulation of core'
     Write-Host '  gls_udp Approach A: UDP cells with delays from the STA'
-    Write-Host '  build   Quartus compile of the board project'
+    Write-Host '  build   Quartus compile of one depth'
     Write-Host '  build_sweep  Compile several depths and summarize their slack'
     Write-Host '  sta_export   Export the critical path of the builds to build/sta/ (CSV)'
     Write-Host '  program Load the .sof of that depth into the FPGA (JTAG device 2)'
@@ -65,6 +69,8 @@ function Show-Help {
     Write-Host '          compiles each one (default: list in scripts/build.tcl),'
     Write-Host '          sta_export exports each one (default: every build found)'
     Write-Host '  -Corner Delay corner for gls_udp: min, typ or max (default max)'
+    Write-Host '  -Revision  Quartus revision for build, build_sweep and sta_export:'
+    Write-Host '          board (default, for the FPGA) or core_sim (netlist for simulation)'
 }
 
 function Invoke-Sim([string]$Mode) {
@@ -88,22 +94,22 @@ function Update-TimingCfg {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-function Invoke-Quartus([string]$Action) {
-    $quartusArgs = @('-t', 'scripts/build.tcl', $Action, 'board')
+function Invoke-Quartus([string]$Action, [string]$Rev) {
+    $quartusArgs = @('-t', 'scripts/build.tcl', $Action, $Rev)
     if ($Depth -gt 0) { $quartusArgs += "$Depth" }
     quartus_sh @quartusArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function Invoke-Sweep {
-    $quartusArgs = @('-t', 'scripts/build.tcl', 'sweep', 'board')
+    $quartusArgs = @('-t', 'scripts/build.tcl', 'sweep', $Revision)
     if ($Depths.Count -gt 0) { $quartusArgs += ($Depths -join ' ') }
     quartus_sh @quartusArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function Invoke-StaExport {
-    $staArgs = @('-t', 'scripts/sta_export.tcl', 'board')
+    $staArgs = @('-t', 'scripts/sta_export.tcl', $Revision)
     if ($Depths.Count -gt 0) { $staArgs += ($Depths -join ' ') }
     quartus_sta @staArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -131,10 +137,10 @@ try {
         'help'        { Show-Help }
         'rtl'         { Invoke-Sim 'rtl' }
         'gls_udp'     { Update-TimingCfg; Invoke-Sim 'gls_udp' }
-        'build'       { Invoke-Quartus 'compile' }
+        'build'       { Invoke-Quartus 'compile' $Revision }
         'build_sweep' { Invoke-Sweep }
         'sta_export'  { Invoke-StaExport }
-        'program'     { Invoke-Quartus 'program' }
+        'program'     { Invoke-Quartus 'program' 'board' }  # only the board revision runs on the FPGA
         'report'      { Invoke-Report }
         'clean'       { Invoke-Clean }
     }

@@ -5,6 +5,7 @@
 #   make rtl DEPTH=24   chain depth 24
 #   make gls_udp DEPTHS="8 16 24" CORNER=typ  approach A, one run per depth
 #   make build DEPTH=24 Quartus compile of the board project
+#   make build DEPTH=24 REVISION=core_sim  netlist of core for simulation
 #   make build_sweep DEPTHS="8 16 24"  compile several depths
 #   make sta_export     critical path of every build to build/sta/ (CSV)
 #   make program DEPTH=24  load that .sof into the FPGA
@@ -13,6 +14,7 @@
 DEPTH  ?=
 DEPTHS ?=
 CORNER ?= max
+REVISION ?= board
 PYTHON ?= python3
 
 # Everything generated lives in build/; the quartus/ folders only appear
@@ -25,13 +27,13 @@ SIM_DEPTHS = $(if $(DEPTHS),$(DEPTHS),$(DEPTH))
 .PHONY: help rtl gls_udp build build_sweep sta_export program report clean
 
 help:
-	@echo "Usage: make <target> [DEPTH=<k>] [DEPTHS=\"k1 k2 ...\"] [CORNER=min|typ|max]"
+	@echo "Usage: make <target> [DEPTH=<k>] [DEPTHS=\"k1 k2 ...\"] [CORNER=min|typ|max] [REVISION=board|core_sim]"
 	@echo ""
 	@echo "Targets:"
 	@echo "  help    Show this message (default)"
 	@echo "  rtl     Zero-delay RTL simulation of core"
 	@echo "  gls_udp Approach A: UDP cells with delays from the STA"
-	@echo "  build   Quartus compile of the board project"
+	@echo "  build   Quartus compile of one depth"
 	@echo "  build_sweep  Compile several depths and summarize their slack"
 	@echo "  sta_export   Export the critical path of the builds to build/sta/ (CSV)"
 	@echo "  program Load the .sof of that depth into the FPGA (JTAG device 2)"
@@ -44,6 +46,8 @@ help:
 	@echo "          compiles each one (default: list in scripts/build.tcl),"
 	@echo "          sta_export exports each one (default: every build found)"
 	@echo "  CORNER  Delay corner for gls_udp: min, typ or max (default max)"
+	@echo "  REVISION  Quartus revision for build, build_sweep and sta_export:"
+	@echo "          board (default, for the FPGA) or core_sim (netlist for simulation)"
 
 rtl:
 	vsim -c -nolog -do "set MODE rtl; set DEPTH {$(SIM_DEPTHS)}; source scripts/sim.tcl"
@@ -60,13 +64,13 @@ build/sta/board_summary.csv:
 	@exit 2
 
 build:
-	quartus_sh -t scripts/build.tcl compile board $(DEPTH)
+	quartus_sh -t scripts/build.tcl compile $(REVISION) $(DEPTH)
 
 build_sweep:
-	quartus_sh -t scripts/build.tcl sweep board "$(DEPTHS)"
+	quartus_sh -t scripts/build.tcl sweep $(REVISION) "$(DEPTHS)"
 
 sta_export:
-	quartus_sta -t scripts/sta_export.tcl board "$(DEPTHS)"
+	quartus_sta -t scripts/sta_export.tcl $(REVISION) "$(DEPTHS)"
 
 program:
 	quartus_sh -t scripts/build.tcl program board $(DEPTH)

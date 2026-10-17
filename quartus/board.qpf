@@ -3,3 +3,4 @@ QUARTUS_VERSION = "25.1"
 # Revisions
 
 PROJECT_REVISION = "board"
+PROJECT_REVISION = "core_sim"
