@@ -29,28 +29,48 @@ simulation once per k.
 .\run.ps1 gls_udp                      # approach A, slow corner
 .\run.ps1 gls_udp -Depth 40 -Corner typ
 .\run.ps1 gls_udp -Depths 8,16,24,32,40,48,64
+.\run.ps1 gls_func -Depth 40              # Quartus netlist, zero delay
+.\run.ps1 gls_sdf                      # approach B, slow corner
+.\run.ps1 gls_sdf -Depths 16,32,40 -Corner typ
 .\run.ps1 report                       # k x T table of all the runs
 ```
 
 On Linux: `make rtl`, `make rtl DEPTH=24`, `make gls_udp DEPTH=40 CORNER=typ`,
-`make gls_udp DEPTHS="8 16 24 32 40 48 64"`, `make report`.
+`make gls_udp DEPTHS="8 16 24 32 40 48 64"`, `make gls_func DEPTH=40`,
+`make gls_sdf DEPTHS="16 32 40" CORNER=typ`, `make report`.
 
-The log of each run is in `build/<mode>/d<k>/sim.log`; for `gls_udp` the
-folder includes the corner (`build/gls_udp_max/d40/sim.log`).
+`gls_func` and `gls_sdf` need a Quartus netlist of each depth. If it is
+missing or older than the sources, the script builds it first (about 2
+minutes per depth); `gls_sdf` also refreshes the timing export and the SDF
+file of that depth.
+
+The log of each run is in `build/<mode>/d<k>/sim.log`; for `gls_udp` and
+`gls_sdf` the folder includes the corner (`build/gls_udp_max/d40/sim.log`).
 
 ## Simulation modes
 
 | Mode | What is simulated | Passes when | Expected result |
 |---|---|---|---|
 | `rtl` | The RTL code, zero delay | Every period passes | Passes at every T and every k |
+| `gls_func` | The Quartus netlist of `core` (revision `core_sim`), zero delay | Every period passes | Passes at every T and every k |
 | `gls_udp` | Approach A: the chain stages and flip-flops are the cells in `cells/`, with delays from the Quartus timing analysis | Every period from 10 ns up passes | Fails from some k on |
+| `gls_sdf` | Approach B: the Quartus netlist with an SDF file made from the timing analysis of that build | Every period from 10 ns up passes | Fails from some k on |
 
 `rtl` checks that the logic is right. It cannot find timing problems,
 because every gate switches in zero time; a failure there is a real bug.
 
-`gls_udp` is judged at the board period (10 ns, 100 MHz) and above, so its
-result says whether that depth would work on the board according to the
-chosen corner. Shorter periods are still simulated and shown in the table.
+`gls_func` checks that Quartus built the same logic. It is the kind of
+gate-level simulation that Cyclone V gives out of the box: the netlist has
+the real cells, but no delays, so it cannot find timing problems either.
+
+`gls_udp` and `gls_sdf` are judged at the board period (10 ns, 100 MHz) and
+above, so their result says whether that depth would work on the board
+according to the chosen corner. Shorter periods are still simulated and
+shown in the table.
+
+In `gls_sdf` the corner is picked with `-sdfmin`, `-sdftyp` or `-sdfmax`.
+The script also passes `+<corner>delays`, only so that the testbench can
+print the corner.
 
 ## The three zones
 
@@ -61,16 +81,21 @@ At the board period, as k grows:
    chip at room temperature is faster than the worst case.
 3. Large k: fails everywhere.
 
-Results with T = 10 ns (`.\run.ps1 gls_udp -Depths ... -Corner <c>`):
+Results with T = 10 ns (`.\run.ps1 gls_udp -Depths ... -Corner <c>`, same
+for `gls_sdf`):
 
 | | Last k that passes | First k that fails |
 |---|---|---|
 | `gls_udp`, max (slow corner) | 24 | 32 |
+| `gls_sdf`, max (slow corner) | 24 | 32 |
 | `gls_udp`, typ | 32 | 36 |
+| `gls_sdf`, typ | 36 | 37 |
 | `gls_udp`, min (fast corner) | 48 | 64 |
+| `gls_sdf`, min (fast corner) | 48 | 64 |
 | Board | 39 | 40 |
 
-`rtl` passes for every k.
+`rtl` and `gls_func` pass for every k. The full comparison is in
+`docs/results.md`.
 
 ## Options
 
@@ -111,13 +136,14 @@ Verdict at T >= 10000 ps: PASS
 ```
 
 - `Delay corner`: detected from the `+mindelays` / `+maxdelays` option; the
-  RTL has no delays, so it does not matter there
+  RTL and the plain netlist have no delays, so it does not matter there
 - `chain_err`: cycles where the captured chain bit was wrong or `X`
 - `ref_err`: same for the reference bit. The reference path has no delay,
   so it should always be 0; anything else would mean a false hold violation
   in the LFSR
-- `x_count`: cycles where an output was `X`. In `gls_udp` an `X` only comes
-  from a setup/hold violation in a cell, so this counts the violations
+- `x_count`: cycles where an output was `X`. In `gls_udp` and `gls_sdf` an
+  `X` only comes from a setup/hold violation in a register, so this counts
+  the violations
 
 In the example, at 6 ns the chain output arrives after the clock edge: the
 flip-flop keeps the old value (errors, no `X`). At 4 ns some changes land
@@ -129,9 +155,9 @@ The last line printed by the script is `=== RESULT: PASS`, `FAIL`,
 ## Timing check messages
 
 Every setup/hold violation would print a 3-line `** Error: $setup(...)`
-message, hundreds per run. `gls_udp` hides them with `+no_tchk_msg`; the
-violations still happen and still give `X`, so they are counted in
-`x_count`. To see each one:
+message, hundreds per run. `gls_udp` and `gls_sdf` hide them with
+`+no_tchk_msg`; the violations still happen and still give `X`, so they are
+counted in `x_count`. To see each one:
 
 ```
 vsim -c -nolog -do "set MODE gls_udp; set TCHK_MSG 1; set DEPTH 16; source scripts/sim.tcl"

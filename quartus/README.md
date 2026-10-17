@@ -8,9 +8,11 @@ Quartus project for the Terasic DE10-Standard (Cyclone V SX, `5CSXFC6D6F31C6`).
 
 | File | What it is |
 |---|---|
-| `board.qpf` | Project file, revision `board` |
+| `board.qpf` | Project file, revisions `board` and `core_sim` |
 | `board.qsf` | Settings of the `board` revision: device, sources, pins |
-| `board.sdc` | Timing constraints |
+| `board.sdc` | Timing constraints of `board` |
+| `core_sim.qsf` | Settings of the `core_sim` revision (netlist for simulation) |
+| `core_sim.sdc` | Timing constraints of `core_sim` |
 | `ip/pll_main.v` | PLL variation: 50 MHz in, 100 MHz out, with a `locked` output |
 | `ip/pll_main.qip` | Quartus settings that go with the PLL |
 
@@ -30,10 +32,45 @@ synchronizer for KEY0 and the 7-segment displays.
 Only the 54 pins used by the design are assigned (taken from the Terasic
 Golden Top), all 3.3-V LVTTL.
 
+## The `core_sim` revision
+
+Top level: `rtl/core.sv`, the same core as the board but without the PLL
+and the displays, so the testbench sets the clock period. It is only used
+for approach B (`gls_func` and `gls_sdf` modes): Quartus writes a netlist of
+the placed design that Questa can simulate.
+
+- `clk` is on pin AF14, the same as `CLOCK_50` on the board, so the
+  placement is close to the board one (but not the same: each build places
+  the chain a little differently).
+- The other ports only exist for the testbench, so they are virtual pins:
+  no I/O cells, no pin locations.
+- `core_sim.sdc` sets the same 100 MHz clock as the board:
+  `create_clock -period 10 [get_ports clk]` and `derive_clock_uncertainty`.
+
+The EDA section of `core_sim.qsf` (the same settings as the reference
+repo) asks for a simulation netlist:
+
+```
+EDA_SIMULATION_TOOL "Questa Intel FPGA (SystemVerilog)"
+EDA_OUTPUT_DATA_FORMAT "SYSTEMVERILOG HDL" -section_id eda_simulation
+EDA_GENERATE_FUNCTIONAL_NETLIST ON -section_id eda_simulation
+EDA_TIME_SCALE "1 ps" -section_id eda_simulation
+```
+
+For Cyclone V this netlist is **functional only**: Quartus does not write an
+SDF file with the delays, so the netlist simulates with zero delay. The
+Questa models of its cells have timing checks and delay paths, but all
+set to 0. Approach B fills them in with an SDF file built from the timing
+analysis (`scripts/gen_sdf.py`).
+
+In the netlist the chain stages are `cyclonev_lcell_comb` cells named
+after the RTL (`u_chain|g_stage[3].u_stage|y_keep`), and the registers are
+`dffeas` cells (`u_chain_ff|q`, `u_lfsr|g_ff[0].u_ff|q`, ...).
+
 ## How the depth is passed
 
-`board.qsf` does not set `CHAIN_DEPTH`. `scripts/build.tcl` copies the
-project to `build/quartus/board_d<k>/`, adds
+Neither `.qsf` sets `CHAIN_DEPTH`. `scripts/build.tcl` copies the
+project to `build/quartus/<revision>_d<k>/`, adds
 
 ```
 set_global_assignment -name VERILOG_MACRO "CHAIN_DEPTH=<k>"
@@ -93,14 +130,19 @@ changes a little between them. The board results go in `docs/results.md`.
 ## Building
 
 ```powershell
-.\run.ps1 build                    # default depth (16)
+.\run.ps1 build                    # board revision, default depth (16)
 .\run.ps1 build -Depth 40
 .\run.ps1 build_sweep              # 8 16 24 32 36 40 44 48 64
 .\run.ps1 build_sweep -Depths 37,38,39
+.\run.ps1 build -Revision core_sim -Depth 40
 ```
 
 On Linux: `make build`, `make build DEPTH=40`, `make build_sweep`,
-`make build_sweep DEPTHS="37 38 39"`.
+`make build_sweep DEPTHS="37 38 39"`, `make build REVISION=core_sim DEPTH=40`.
+
+The `core_sim` builds rarely need to be run by hand: `.\run.ps1 gls_func`
+and `.\run.ps1 gls_sdf` build the netlist of each depth when it is missing
+or older than the RTL or the `core_sim` settings.
 
 A build takes about 2 minutes. Outputs:
 
@@ -109,6 +151,7 @@ A build takes about 2 minutes. Outputs:
 | `build/quartus/board_d<k>/output_files/board.sof` | Bitstream for depth k |
 | `build/quartus/board_d<k>/output_files/board.sta.rpt` | Full timing report |
 | `build/quartus/board_sweep.csv` | Worst setup slack per depth and corner (last sweep) |
+| `build/quartus/core_sim_d<k>/simulation/questa/core_sim.svo` | Netlist of `core` for depth k |
 
 ## Programming
 
