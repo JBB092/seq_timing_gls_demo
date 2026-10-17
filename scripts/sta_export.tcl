@@ -3,7 +3,8 @@
 #   quartus_sta -t scripts/sta_export.tcl <revision> ["k1 k2 ..."]
 # Without a depth list it exports every build/quartus/<revision>_d<k>.
 # Writes:
-#   build/sta/<revision>_summary.csv   one row per depth and corner
+#   build/sta/<revision>_summary.csv   one row per depth and corner (rows of
+#                                      depths not exported this time are kept)
 #   build/sta/<revision>_path_d<k>.csv every point of the path, per corner
 #
 # The exported path always starts at LFSR bit 0, the only one that goes
@@ -146,6 +147,22 @@ foreach k $depths {
     cd $top_dir
 }
 
-write_file $out_dir/${revision}_summary.csv $summary
-puts "=== Written $out_dir/${revision}_summary.csv"
+# Keep the rows of the depths not exported this time, sorted by depth
+# (lsort is stable, so the corner order inside a depth stays)
+set summary_csv $out_dir/${revision}_summary.csv
+set lines [lrange [split [string trim $summary] "\n"] 1 end]
+if {[file exists $summary_csv]} {
+    set f [open $summary_csv r]
+    foreach line [lrange [split [string trim [read $f]] "\n"] 1 end] {
+        if {[lsearch -exact $depths [lindex [split $line ,] 0]] < 0} { lappend lines $line }
+    }
+    close $f
+}
+set rows {}
+foreach line $lines { lappend rows [list [lindex [split $line ,] 0] $line] }
+set header [lindex [split $summary "\n"] 0]
+set text "$header\n"
+foreach row [lsort -integer -index 0 $rows] { append text "[lindex $row 1]\n" }
+write_file $summary_csv $text
+puts "=== Written $summary_csv"
 if {$n_failed > 0} { exit 1 }

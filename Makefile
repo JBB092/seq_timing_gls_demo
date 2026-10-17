@@ -5,6 +5,7 @@
 #   make rtl DEPTH=24   chain depth 24
 #   make gls_func DEPTH=24  zero-delay simulation of the Quartus netlist
 #   make gls_udp DEPTHS="8 16 24" CORNER=typ  approach A, one run per depth
+#   make gls_sdf DEPTHS="16 32"   approach B (builds what is missing)
 #   make build DEPTH=24 Quartus compile of the board project
 #   make build DEPTH=24 REVISION=core_sim  netlist of core for simulation
 #   make build_sweep DEPTHS="8 16 24"  compile several depths
@@ -17,6 +18,8 @@ DEPTHS ?=
 CORNER ?= max
 REVISION ?= board
 PYTHON ?= python3
+# sim.tcl runs gen_sdf.py with the same interpreter
+export PYTHON
 
 # Everything generated lives in build/; the quartus/ folders only appear
 # if the project is opened from the Quartus GUI
@@ -25,7 +28,7 @@ CLEAN_DIRS := build quartus/db quartus/incremental_db quartus/output_files
 # Simulations take DEPTHS if given, otherwise DEPTH
 SIM_DEPTHS = $(if $(DEPTHS),$(DEPTHS),$(DEPTH))
 
-.PHONY: help rtl gls_func gls_udp build build_sweep sta_export program report clean
+.PHONY: help rtl gls_func gls_udp gls_sdf build build_sweep sta_export program report clean
 
 help:
 	@echo "Usage: make <target> [DEPTH=<k>] [DEPTHS=\"k1 k2 ...\"] [CORNER=min|typ|max] [REVISION=board|core_sim]"
@@ -35,6 +38,7 @@ help:
 	@echo "  rtl     Zero-delay RTL simulation of core"
 	@echo "  gls_func  Zero-delay simulation of the Quartus netlist (core_sim revision)"
 	@echo "  gls_udp Approach A: UDP cells with delays from the STA"
+	@echo "  gls_sdf Approach B: Quartus netlist with an SDF made from the STA"
 	@echo "  build   Quartus compile of one depth"
 	@echo "  build_sweep  Compile several depths and summarize their slack"
 	@echo "  sta_export   Export the critical path of the builds to build/sta/ (CSV)"
@@ -47,7 +51,7 @@ help:
 	@echo "  DEPTHS  Depth list: the simulations run each one, build_sweep"
 	@echo "          compiles each one (default: list in scripts/build.tcl),"
 	@echo "          sta_export exports each one (default: every build found)"
-	@echo "  CORNER  Delay corner for gls_udp: min, typ or max (default max)"
+	@echo "  CORNER  Delay corner for gls_udp and gls_sdf: min, typ or max (default max)"
 	@echo "  REVISION  Quartus revision for build, build_sweep and sta_export:"
 	@echo "          board (default, for the FPGA) or core_sim (netlist for simulation)"
 
@@ -60,6 +64,11 @@ gls_func:
 
 gls_udp: build/timing_cfg.svh
 	vsim -c -nolog -do "set MODE gls_udp; set CORNER $(CORNER); set DEPTH {$(SIM_DEPTHS)}; source scripts/sim.tcl"
+
+# The netlist, STA export and SDF of each depth are made (or remade if
+# outdated) by sim.tcl
+gls_sdf:
+	vsim -c -nolog -do "set MODE gls_sdf; set CORNER $(CORNER); set DEPTH {$(SIM_DEPTHS)}; source scripts/sim.tcl"
 
 # Regenerated when the STA export is newer
 build/timing_cfg.svh: build/sta/board_summary.csv

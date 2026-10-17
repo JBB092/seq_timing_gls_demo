@@ -13,6 +13,8 @@
 .EXAMPLE
     .\run.ps1 gls_func -Depth 24
 .EXAMPLE
+    .\run.ps1 gls_sdf -Depths 16,32,40 -Corner typ
+.EXAMPLE
     .\run.ps1 build -Depth 24
 .EXAMPLE
     .\run.ps1 build_sweep -Depths 8,16,24
@@ -26,7 +28,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'rtl', 'gls_func', 'gls_udp', 'build', 'build_sweep', 'sta_export', 'program', 'report', 'clean')]
+    [ValidateSet('help', 'rtl', 'gls_func', 'gls_udp', 'gls_sdf', 'build', 'build_sweep', 'sta_export', 'program', 'report', 'clean')]
     [string]$Target = 'help',
 
     # Chain depth; 0 means the default in rtl/chain_cfg.svh
@@ -36,7 +38,7 @@ param(
     # Depth list: simulations run once per depth, build_sweep compiles each one
     [int[]]$Depths = @(),
 
-    # Delay corner for gls_udp
+    # Delay corner for gls_udp and gls_sdf
     [ValidateSet('min', 'typ', 'max')]
     [string]$Corner = 'max',
 
@@ -59,6 +61,7 @@ function Show-Help {
     Write-Host '  rtl     Zero-delay RTL simulation of core'
     Write-Host '  gls_func  Zero-delay simulation of the Quartus netlist (core_sim revision)'
     Write-Host '  gls_udp Approach A: UDP cells with delays from the STA'
+    Write-Host '  gls_sdf Approach B: Quartus netlist with an SDF made from the STA'
     Write-Host '  build   Quartus compile of one depth'
     Write-Host '  build_sweep  Compile several depths and summarize their slack'
     Write-Host '  sta_export   Export the critical path of the builds to build/sta/ (CSV)'
@@ -71,7 +74,7 @@ function Show-Help {
     Write-Host '  -Depths Depth list: the simulations run each one, build_sweep'
     Write-Host '          compiles each one (default: list in scripts/build.tcl),'
     Write-Host '          sta_export exports each one (default: every build found)'
-    Write-Host '  -Corner Delay corner for gls_udp: min, typ or max (default max)'
+    Write-Host '  -Corner Delay corner for gls_udp and gls_sdf: min, typ or max (default max)'
     Write-Host '  -Revision  Quartus revision for build, build_sweep and sta_export:'
     Write-Host '          board (default, for the FPGA) or core_sim (netlist for simulation)'
 }
@@ -141,6 +144,7 @@ try {
         'rtl'         { Invoke-Sim 'rtl' }
         'gls_func'    { Invoke-Sim 'gls_func' }
         'gls_udp'     { Update-TimingCfg; Invoke-Sim 'gls_udp' }
+        'gls_sdf'     { Invoke-Sim 'gls_sdf' }
         'build'       { Invoke-Quartus 'compile' $Revision }
         'build_sweep' { Invoke-Sweep }
         'sta_export'  { Invoke-StaExport }
