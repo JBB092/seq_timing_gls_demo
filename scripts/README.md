@@ -10,6 +10,7 @@
 | `parse_logs.py` | Lists the errors and warnings of every log and merges the T sweeps into a k x T table | `build/*/d*/sim.log` | `build/reports/kxt_<mode>.csv` | `report` target |
 | `build.tcl` | Compiles the Quartus project for one or several depths, or programs the board | `quartus/board.qsf` and the sources it lists | `build/quartus/board_d<k>/`, `build/quartus/board_sweep.csv` | `build`, `build_sweep`, `program` targets |
 | `sta_export.tcl` | Exports the critical path of each build (every point, every corner) | `build/quartus/board_d<k>/` | `build/sta/board_summary.csv`, `build/sta/board_path_d<k>.csv` | `sta_export` target |
+| `gen_timing_cfg.py` | Turns the STA export into average cell delays for approach A | `build/sta/board_summary.csv` | `build/timing_cfg.svh` | by hand for now |
 
 ## sim.tcl
 
@@ -86,6 +87,38 @@ The Cyclone V timing model reports the register times (`utco`, `utsu`,
 `uth`) as 0: those delays are part of the clock network delay and of the
 last cell before the capture register (`reg_in` column).
 
+## gen_timing_cfg.py
+
+```
+python scripts/gen_timing_cfg.py
+python scripts/gen_timing_cfg.py --csv build/sta/board_summary.csv --out build/timing_cfg.svh --period 10
+```
+
+Writes `build/timing_cfg.svh` with the delays used by the approach A cells,
+as `min:typ:max` triplets in ns. Questa picks one with `+mindelays`,
+`+typdelays` or `+maxdelays`.
+
+| Corner | Taken from |
+|---|---|
+| min | Fast 1100mV 0C |
+| typ | Midpoint of min and max (Quartus has no typical corner, so this is an estimate) |
+| max | Slow 1100mV 85C |
+
+| Macro | Meaning | How it is derived |
+|---|---|---|
+| `T_STAGE` | One chain stage (LUT + wire) | Total chain delay / total stages, over all builds |
+| `T_CO` | Clock to output of a register | `reg_in` |
+| `T_SU` | Setup time | Uncertainty minus clock skew |
+| `T_H` | Hold time | 0, as reported by Quartus |
+
+Since Quartus reports the register times as 0, `T_CO` and `T_SU` are built
+from the other columns so that `T_CO + T_SU` is the same margin the STA adds
+to the data path. `T_H` stays below `T_CO`, which avoids false hold
+violations inside the LFSR, where the feedback has no delay.
+
+The same file works for any depth. The script also prints the largest depth
+that should pass at the given period for each corner.
+
 ## Flow
 
 For now, for each depth k:
@@ -93,5 +126,5 @@ For now, for each depth k:
 ```
 sim.tcl (rtl, k)  ->  build/rtl/d<k>/sim.log  ->  parse_logs.py  ->  k x T table
 build.tcl compile (k)  ->  slack  ->  build.tcl program (k)  ->  board
-build.tcl compile (k)  ->  sta_export.tcl  ->  build/sta/*.csv
+build.tcl compile (k)  ->  sta_export.tcl  ->  build/sta/*.csv  ->  gen_timing_cfg.py  ->  build/timing_cfg.svh
 ```
