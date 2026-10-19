@@ -68,7 +68,7 @@ Reference system (all results were taken on it):
 
 | Item | Version |
 |---|---|
-| OS | Windows 10 22H2 (64-bit); Ubuntu support through the `Makefile` (not tested yet) |
+| OS | Windows 10 22H2 (64-bit); also tested on Ubuntu 26.04 LTS through the `Makefile` |
 | Quartus | Quartus Prime 25.1std.0 Lite Edition |
 | Questa | Questa Altera Starter FPGA Edition 2025.2 (free license) |
 | Python | 3.11 or newer (only the standard library) |
@@ -106,7 +106,15 @@ export SALT_LICENSE_SERVER=$LM_LICENSE_FILE
 
 Check with `vsim -version`, `quartus_sh --version` and `jtagconfig` (with
 the board connected it lists `DE-SoC [USB-1]` with the HPS as device 1 and
-the FPGA as device 2).
+the FPGA as device 2). On Linux the cable is named after the USB port, for
+example `DE-SoC [1-2]`; the scripts find it on their own. Linux also needs a
+udev rule for the USB-Blaster II:
+
+```bash
+echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="09fb", MODE="0666"' | \
+    sudo tee /etc/udev/rules.d/51-usbblaster.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
 
 ## Commands
 
@@ -154,9 +162,11 @@ and again whenever the design changes.
 
 On the board used for this demo the path stops meeting 100 MHz at
 **k = 40**: k = 39 shows `0000` errors and k = 40 jumps straight to `FFFF`
-with `LEDR0` on. Every chip is a bit different (process, temperature,
-supply), so on another DE10-Standard the threshold can move a few stages
-around 40; the STA guarantees only k <= 24 (slow corner).
+with `LEDR0` on (the k = 40 build made on Ubuntu was closer to the edge:
+its count climbed visibly before reaching `FFFF`). Every chip is a bit
+different (process, temperature, supply), so on another DE10-Standard the
+threshold can move a few stages around 40; the STA guarantees only k <= 24
+(slow corner).
 
 ```powershell
 # Board: passes (HEX3-HEX0 = 0000, LEDR0 off)

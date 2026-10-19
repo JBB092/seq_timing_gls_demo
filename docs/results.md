@@ -35,7 +35,91 @@ The full `jtagconfig` output is still to be added.
 
 ### Ubuntu
 
-Pending (phase 7).
+Recorded on 2026-10-19, on the same laptop (dual boot) and the same board.
+
+| Item | Version |
+|---|---|
+| Operating system | Ubuntu 26.04.1 LTS, kernel 7.0.0-38-generic, x86_64 |
+| Quartus | Quartus Prime 25.1std.0 Build 1129 10/21/2025 SC Lite Edition |
+| Questa | Questa Altera Starter FPGA Edition-64 vsim 2025.2 (2025.05, May 31 2025) |
+| Python | 3.14.4 |
+| make | GNU Make 4.4.1 |
+| git | 2.53.0 |
+
+`jtagconfig`:
+
+```
+1) DE-SoC [1-2]
+  4BA00477   SOCVHPS
+  02D020DD   5CSEBA6(.|ES)/5CSEMA6/..
+```
+
+`02D020DD` is the JTAG ID shared by several Cyclone V SoC parts, so
+`jtagconfig` prints a list of names; the device is the 5CSXFC6D6F31C6N.
+
+Notes from the setup (Ubuntu 26.04 is newer than the distributions Quartus
+25.1 lists as supported, but nothing extra was needed):
+
+- Quartus, Questa and the Cyclone V device file come from the Quartus Lite
+  Linux download; with the three installers in one folder, the Quartus
+  installer also installs the other two
+  (`--mode unattended --installdir $HOME/altera_lite/25.1std`).
+- The Questa license file from Windows works as is (it is tied to the MAC
+  address of the network card, the same card in the dual boot).
+- The environment variables are the same as on Windows (see the root
+  README), set in `~/.bashrc`.
+- The USB-Blaster II needs a udev rule (vendor `09fb`) to be used without
+  `sudo`.
+- On Linux the cable name includes the USB port (`DE-SoC [1-2]`,
+  `DE-SoC [1-3]`, ...) and changes when the board is plugged into another
+  port, so `scripts/build.tcl` reads it from `jtagconfig` before programming.
+
+Results with `make` (one run of each, from a clean `build/`):
+
+| Command | Result |
+|---|---|
+| `make rtl DEPTHS="16 40"` | PASS, PASS (every period) |
+| `make build_sweep DEPTHS="16 39 40"` | 3 builds OK, 3 min 12 s |
+| `make gls_udp DEPTHS="16 40"` | k = 16 PASS (8 ns), k = 40 FAIL (16 ns) |
+| `make gls_udp DEPTHS="16 40" CORNER=typ` | k = 16 PASS (6 ns), k = 40 FAIL (12 ns) |
+| `make gls_func DEPTH=40` | PASS (every period), with its `core_sim` build |
+| `make gls_sdf DEPTH=40` | FAIL (16 ns), SDF annotation complete, 0 warnings |
+| `make report` | k x T tables of the 8 runs |
+
+In brackets, the shortest period that passes. These are the same values as
+on Windows. Worst setup slack (ns) of the `board` builds on Ubuntu:
+
+| k | Slow 85C | Slow 0C | Fast 85C | Fast 0C |
+|---|---|---|---|---|
+| 16 | 2.272 | 2.619 | 5.640 | 6.053 |
+| 39 | -4.434 | -3.898 | 1.876 | 2.632 |
+| 40 | -5.106 | -4.579 | 1.448 | 2.208 |
+
+They differ a little from the Windows builds (k = 16: 2.272 against 2.740;
+k = 40: -5.106 against -5.241): the placement is not the same on both
+systems. The verdicts at 10 ns do not change. The approach A delays from
+these three builds (`T_STAGE` 0.192:0.284:0.376 ns) are also close to the
+Windows ones (0.184:0.274:0.364 ns, from nine builds).
+
+Board test with the Ubuntu builds (same procedure as below):
+
+| k | HEX3-HEX0 | LEDR0 | Result |
+|---|---|---|---|
+| 16 | `0000` | off | PASS |
+| 39 | `0000` | off | PASS |
+| 40 | counts up, then `FFFF` | on | FAIL |
+
+The threshold is the same as on Windows (39 passes, 40 fails), but the
+k = 40 build from Ubuntu fails differently: the count does not jump to
+`FFFF` at once. HEX3-HEX2 count up slowly enough to follow by eye while
+HEX1-HEX0 read `00`, and only when HEX3-HEX2 reach `FF` does the display
+saturate to `FFFF`. HEX2 moves once every 256 errors, so the path fails on
+a small fraction of the cycles (on the order of thousands of errors per
+second out of 100 million cycles), and the two low digits change too fast
+to read. This build is a little faster than the Windows one (slack -5.106
+against -5.241 ns in the slow corner), so on this chip at room temperature
+its path lands right at the edge: it misses the clock only on some data
+patterns, the ones that make the slowest transition through the chain.
 
 ## Board test
 
@@ -64,11 +148,12 @@ The board was at room temperature.
 | 64 | `FFFF` | on | FAIL |
 
 The failing depths reach `FFFF` (the display saturates above 16 bits) right
-after `KEY0` is released: at 100 MHz, 65 536 cycles take 0.66 ms. There is
-no depth where the counter grows slowly. Each extra stage adds about 0.2 to
-0.4 ns, much more than the small window of supply noise and jitter where a
-path fails only now and then, so a depth either always meets the clock edge
-or misses it on most cycles.
+after `KEY0` is released: at 100 MHz, 65 536 cycles take 0.66 ms. None of
+the Windows builds made the counter grow slowly. Each extra stage adds about
+0.2 to 0.4 ns, much more than the small window where a path fails only now
+and then, so a build usually either meets the clock edge or misses it on
+most cycles. The k = 40 build made on Ubuntu landed inside that window and
+counted up slowly (see the Ubuntu section above).
 
 Depths 37, 38 and 39 are not in the default build list; they were built
 separately (`.\run.ps1 build_sweep -Depths 37,38,39`) to find the exact

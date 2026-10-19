@@ -197,9 +197,10 @@ A uses averages over all the board builds; B uses the values of each
   stage, and also records the worst slack.
 - A design is signed off with the slow corner. The board works beyond that,
   because a chip at room temperature is faster than the worst case.
-- On the board a failing depth does not count errors slowly: the counter
-  saturates right away. One extra stage adds 0.2 to 0.4 ns, much more than
-  the small window where a path fails only now and then.
+- On the board a failing depth usually saturates the counter right away.
+  One extra stage adds 0.2 to 0.4 ns, much more than the small window where
+  a path fails only now and then. A build can still land inside that window:
+  the k = 40 build made on Ubuntu counted errors slowly (see `results.md`).
 - Hold, skew and metastability are covered in `theory.md`; the demo
   measures setup only.
 
