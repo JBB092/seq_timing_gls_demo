@@ -106,7 +106,9 @@ quartus_sh -t scripts/build.tcl program board 40
 - `sweep`: `compile` for a list of depths (default `8 16 24 32 36 40 44 48 64`)
   and a slack table, also saved as `build/quartus/board_sweep.csv`.
 - `program`: loads `build/quartus/board_d<k>/output_files/board.sof` into
-  JTAG device 2 (the FPGA).
+  JTAG device 2 (the FPGA). The cable is the one `jtagconfig` lists (its
+  name changes between Windows and Linux); `JTAG_CABLE` picks one if there
+  are several.
 
 Details are in `quartus/README.md`.
 

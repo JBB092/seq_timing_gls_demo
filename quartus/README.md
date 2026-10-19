@@ -166,8 +166,12 @@ quartus_pgm -c "DE-SoC [USB-1]" -m JTAG -o "p;build/quartus/board_d40/output_fil
 ```
 
 The `@2` matters: the DE10-Standard JTAG chain has the HPS (ARM side) as
-device 1 and the FPGA as device 2. Run `jtagconfig` to see the chain. If the
-cable has another name, set the `JTAG_CABLE` environment variable.
+device 1 and the FPGA as device 2. Run `jtagconfig` to see the chain.
+
+The cable name is read from `jtagconfig` before programming: it is
+`DE-SoC [USB-1]` on Windows, but on Linux it includes the USB port
+(`DE-SoC [1-2]`) and changes with it. With more than one cable connected,
+set `JTAG_CABLE` to the one to use.
 
 There is one `.sof` per depth. To test the board: program a depth, press
 KEY0, and watch HEX3-HEX0 and LEDR0 for a few seconds.

@@ -8,7 +8,8 @@
 # sweep compiles a list of depths and writes the worst setup slack of each
 # one to build/quartus/<revision>_sweep.csv.
 # program loads that .sof into the FPGA (device 2 of the DE10-Standard JTAG
-# chain; device 1 is the HPS). Set JTAG_CABLE to use another cable name.
+# chain; device 1 is the HPS). The cable is found with jtagconfig;
+# JTAG_CABLE picks one when several are connected.
 
 load_package flow
 
@@ -140,6 +141,32 @@ proc write_sweep_summary {revision rows} {
     puts "=== Written $csv_file"
 }
 
+# JTAG cable to program. The name changes with the OS and, on Linux, with
+# the USB port ("DE-SoC [USB-1]" on Windows, "DE-SoC [1-2]" on Linux), so
+# it is read from jtagconfig. JTAG_CABLE wins if that cable is connected.
+proc find_cable {} {
+    set cables {}
+    if {![catch {exec jtagconfig 2>@1} out]} {
+        foreach line [split $out \n] {
+            if {[regexp {(?:^|\s)\d+\)\s+(\S.*?)\s*$} $line -> name]} {
+                lappend cables $name
+            }
+        }
+    }
+    if {[info exists ::env(JTAG_CABLE)]} {
+        set wanted $::env(JTAG_CABLE)
+        if {[llength $cables] == 0 || [lsearch -exact $cables $wanted] >= 0} {
+            return $wanted
+        }
+        puts "=== JTAG_CABLE=\"$wanted\" not found, cables found: $cables"
+    }
+    foreach name $cables {
+        if {[string match "DE-SoC*" $name]} { return $name }
+    }
+    if {[llength $cables] > 0} { return [lindex $cables 0] }
+    return "DE-SoC \[USB-1\]"
+}
+
 set action   [lindex $argv 0]
 set revision [lindex $argv 1]
 set depth    [lindex $argv 2]
@@ -169,8 +196,7 @@ switch $action {
             puts "=== No .sof for depth $depth. Build it first: $sof"
             exit 1
         }
-        set cable "DE-SoC \[USB-1\]"
-        if {[info exists ::env(JTAG_CABLE)]} { set cable $::env(JTAG_CABLE) }
+        set cable [find_cable]
         puts "=== program depth=$depth cable=$cable"
         if {[catch {exec quartus_pgm -c $cable -m JTAG -o "p;$sof@2" >@ stdout 2>@ stderr}]} {
             puts "=== RESULT: PROGRAM FAILED"
